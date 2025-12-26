@@ -2,6 +2,7 @@ import StrategyCard from "../components/StrategyCard";
 import meanImg from "../assets/meanreversion.jpg";
 import momentumImg from "../assets/momentum.jpg";
 import rsiImg from "../assets/rsi.jpg";
+import scalpingImg from "../assets/scalping/scalping-hero.png";
 
 function Learn() {
   const strategies = [
@@ -9,6 +10,11 @@ function Learn() {
       title: "Mean Reversion",
       image: meanImg,
       strategyId: "mean-reversion",
+    },
+    {
+      title: "Scalping",
+      image: scalpingImg,
+      strategyId: "scalping",
     },
     {
       title: "Momentum",
