@@ -9,38 +9,36 @@ function Learn() {
     {
       title: "Mean Reversion",
       image: meanImg,
-      strategyId: "mean-reversion",
+      path: "/learn/mean-reversion",
     },
     {
       title: "Scalping",
       image: scalpingImg,
-      strategyId: "scalping",
+      path: "/learn/scalping",
     },
     {
       title: "Momentum",
       image: momentumImg,
-      strategyId: "momentum",
+      path: "/learn/momentum",
     },
     {
       title: "RSI Strategy",
       image: rsiImg,
-      strategyId: "rsi",
+      path: "/learn/rsi",
     },
   ];
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">
-      <h1 className="text-3xl font-bold mb-8">
-        Trading Strategies
-      </h1>
+      <h1 className="text-3xl font-bold mb-8">Trading Strategies</h1>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {strategies.map((s) => (
           <StrategyCard
-            key={s.strategyId}
+            key={s.title}
             title={s.title}
             image={s.image}
-            strategyId={s.strategyId}
+            to={s.path}
           />
         ))}
       </div>
