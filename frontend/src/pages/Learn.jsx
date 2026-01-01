@@ -1,8 +1,10 @@
 import StrategyCard from "../components/StrategyCard";
+
 import meanImg from "../assets/meanreversion.jpg";
 import momentumImg from "../assets/momentum.jpg";
 import rsiImg from "../assets/rsi.jpg";
 import scalpingImg from "../assets/scalping/scalping-hero.png";
+import macdImg from "../assets/macd/macd-histogram.png";
 
 function Learn() {
   const strategies = [
@@ -25,6 +27,11 @@ function Learn() {
       title: "RSI Strategy",
       image: rsiImg,
       path: "/learn/rsi",
+    },
+    {
+      title: "MACD Strategy",
+      image: macdImg,
+      path: "/learn/macd",
     },
   ];
 
