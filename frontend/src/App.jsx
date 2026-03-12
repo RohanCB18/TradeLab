@@ -1,31 +1,19 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route } from 'react-router-dom';
+import Navbar from './components/Navbar';
+import Home from './pages/Home';
+import StrategyDetail from './pages/StrategyDetail';
+import Compare from './pages/Compare';
+import './index.css';
 
-import MainLayout from "./layouts/MainLayout";
-import Home from "./pages/Home";
-import Learn from "./pages/Learn";
-import StrategyDetail from "./pages/StrategyDetail";
-import Test from "./pages/Test";
-
-
-import MeanReversionTest from "./pages/test/MeanReversionTest";
-
-function App() {
+export default function App() {
   return (
-    <Routes>
-      <Route element={<MainLayout />}>
+    <>
+      <Navbar />
+      <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/learn" element={<Learn />} />
-        <Route path="/learn/:strategyId" element={<StrategyDetail />} />
-
-        {/* Test routes */}
-        <Route path="/test" element={<Test />} />
-        <Route
-          path="/test/mean-reversion"
-          element={<MeanReversionTest />}
-        />
-      </Route>
-    </Routes>
+        <Route path="/strategy/:id" element={<StrategyDetail />} />
+        <Route path="/compare" element={<Compare />} />
+      </Routes>
+    </>
   );
 }
-
-export default App;

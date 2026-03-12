@@ -1,0 +1,11 @@
+{
+    "python.defaultInterpreterPath": "C:\\Users\\rohan\\OneDrive\\Desktop\\cursorOP\\TradeLab\\backend\\.venv\\Scripts\\python.exe",
+    "python.analysis.extraPaths": [
+        "C:\\Users\\rohan\\OneDrive\\Desktop\\cursorOP\\TradeLab\\backend",
+        "C:\\Users\\rohan\\OneDrive\\Desktop\\cursorOP\\TradeLab\\backend\\app"
+    ],
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.useLibraryCodeForTypes": true
+}
