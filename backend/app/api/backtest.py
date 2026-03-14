@@ -38,6 +38,7 @@ BACKTESTERS = {
 }
 
 STRATEGY_META = {
+    "benchmark":               {"name": "Nifty 50 Benchmark",       "type": "Benchmark",             "description": "Passive Buy & Hold of the Nifty 50 Index."},
     "mean_reversion":          {"name": "Mean Reversion",           "type": "Mean Reversion",        "description": "Buy yesterday's biggest losers expecting a bounce back."},
     "rs_momentum":             {"name": "RS Momentum",              "type": "Momentum",               "description": "Buy yesterday's top performers riding the trend."},
     "macd_trend":              {"name": "MACD Trend",               "type": "Trend Following",        "description": "EMA crossover-based trend following across the universe."},
@@ -80,10 +81,10 @@ def run_backtest(
     end: str = "2024-01-01",
     initial_capital: float = 100000.0
 ):
-    if strategy_id not in BACKTESTERS:
+    if strategy_id not in BACKTESTERS and strategy_id != "benchmark":
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown strategy. Available: {list(BACKTESTERS.keys())}"
+            detail=f"Unknown strategy. Available: {list(BACKTESTERS.keys())} + ['benchmark']"
         )
 
     try:
@@ -107,9 +108,12 @@ def run_backtest(
             .pct_change().add(1).cumprod().mul(initial_capital)
         )
 
-        # 3. Run dedicated backtester
-        backtester = BACKTESTERS[strategy_id](initial_capital=initial_capital)
-        equity_curve = backtester.run(data)
+        # 3. Run dedicated backtester or return benchmark
+        if strategy_id == "benchmark":
+            equity_curve = benchmark_equity.dropna()
+        else:
+            backtester = BACKTESTERS[strategy_id](initial_capital=initial_capital)
+            equity_curve = backtester.run(data)
 
         # 4. Performance metrics
         metrics = calculate_metrics(equity_curve)

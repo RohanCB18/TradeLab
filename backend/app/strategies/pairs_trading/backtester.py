@@ -18,88 +18,79 @@ class PairsTradingBacktester(StrategyBase):
     - Each pair is allocated an equal share of total capital.
     """
 
-    def _find_top_pairs(self, data: pd.DataFrame, n_pairs: int = 5, lookback: int = 60):
-        """Find the most correlated pairs using the first 'lookback' days."""
-        early_data = data.iloc[:lookback]
-        log_prices = np.log(early_data.replace(0, np.nan).dropna(axis=1))
-        corr_matrix = log_prices.corr()
-
-        pairs = []
-        for a, b in combinations(corr_matrix.columns, 2):
-            pairs.append((a, b, corr_matrix.loc[a, b]))
-
-        pairs.sort(key=lambda x: abs(x[2]), reverse=True)
-        return [(a, b) for a, b, _ in pairs[:n_pairs]]
-
-    def run(self, data: pd.DataFrame, n_pairs: int = 5, z_entry: float = 2.0,
-            spread_window: int = 20, lookback: int = 60):
+    def run(self, data: pd.DataFrame, z_entry: float = 2.0, z_exit: float = 0.5,
+            spread_window: int = 20):
         data = self.prepare_data(data)
 
-        if len(data) < lookback + spread_window + 5:
-            return pd.Series(self.initial_capital, index=data.index, dtype=float)
+        # 1. Define Fundamentally Correlated "Sister" Companies
+        pairs = [
+            ("HDFCBANK.NS", "ICICIBANK.NS"),     # Private Banks
+            ("TCS.NS", "INFY.NS"),               # IT Services
+            ("RELIANCE.NS", "ONGC.NS"),          # Energy / Oil
+            ("TATAMOTORS.NS", "M&M.NS"),         # Auto Manufacturing
+            ("SUNPHARMA.NS", "CIPLA.NS")         # Pharmaceuticals
+        ]
 
-        top_pairs = self._find_top_pairs(data, n_pairs=n_pairs, lookback=lookback)
+        # Calculate daily percentage returns for all stocks
+        daily_returns = data.pct_change()
 
-        capital = float(self.initial_capital)
-        capital_history = pd.Series(index=data.index, dtype=float)
-        capital_history.iloc[0] = capital
+        pair_returns = {}
 
-        if not top_pairs:
-            return capital_history.fillna(capital)
+        # 2. Vectorized Math for each Pair (No Iteration over Days)
+        for sym_a, sym_b in pairs:
+            if sym_a not in data.columns or sym_b not in data.columns:
+                # If a stock is missing from the data, this pair sits in cash (0% return)
+                pair_returns[f"{sym_a}_{sym_b}"] = pd.Series(0.0, index=data.index)
+                continue
 
-        capital_per_pair = capital / len(top_pairs)
+            price_a = data[sym_a]
+            price_b = data[sym_b]
+            
+            ret_a = daily_returns[sym_a]
+            ret_b = daily_returns[sym_b]
 
-        # Run simulation for each pair independently, sum results
-        pair_capitals = {pair: capital_per_pair for pair in top_pairs}
+            # The Spread: Distance between the two log prices
+            spread = np.log(price_a) - np.log(price_b)
+            
+            # 20-Day Rolling Mean and Standard Dev
+            spread_mean = spread.rolling(window=spread_window).mean()
+            spread_std = spread.rolling(window=spread_window).std()
 
-        for i in range(lookback + spread_window, len(data.index) - 1):
-            today = data.index[i]
-            tomorrow = data.index[i + 1]
+            # Z-Score: How many Standard Deviations away from the mean is the spread today?
+            z_score = (spread - spread_mean) / spread_std.replace(0, np.nan)
 
-            total = 0.0
-            for (sym_a, sym_b) in top_pairs:
-                pair_cap = pair_capitals[(sym_a, sym_b)]
+            # --- Target Position Logic ---
+            # 1 = Long A, Short B (Because A is unusually cheap compared to B)
+            # -1 = Short A, Long B (Because A is unusually expensive compared to B)
+            # 0 = Cash (Spread has returned to normal)
+            
+            position = pd.Series(np.nan, index=data.index)
+            
+            # Entry Conditions
+            position[z_score < -z_entry] = 1.0
+            position[z_score > z_entry] = -1.0
+            
+            # Exit Conditions (When Z-score crosses back near 0)
+            position[(z_score > -z_exit) & (z_score < z_exit)] = 0.0
+            
+            # Forward fill the positions (Hold trade until exit condition met)
+            position = position.ffill().fillna(0.0)
+            
+            # Shift by 1 to prevent lookahead bias (We calculate today, trade tomorrow)
+            position = position.shift(1).fillna(0.0)
 
-                price_a = data[sym_a].iloc[i - spread_window:i + 1]
-                price_b = data[sym_b].iloc[i - spread_window:i + 1]
+            # --- Calculate Daily Return for this specific pair ---
+            # If position = 1: Apply +50% weight to A's return, -50% weight to B's return
+            # If position = -1: Apply -50% weight to A's return, +50% weight to B's return
+            pnl = position * (0.5 * ret_a - 0.5 * ret_b)
+            
+            pair_returns[f"{sym_a}_{sym_b}"] = pnl.fillna(0.0)
 
-                if price_a.min() <= 0 or price_b.min() <= 0:
-                    total += pair_cap
-                    continue
+        # 3. Combine the 5 pairs into a single Portfolio
+        # Total portfolio return is the average of the 5 independent pair returns
+        portfolio_daily_returns = pd.DataFrame(pair_returns).mean(axis=1)
 
-                spread = np.log(price_a) - np.log(price_b)
-                spread_mean = spread.mean()
-                spread_std = spread.std()
+        # 4. Compounding Capital
+        capital_history = float(self.initial_capital) * (1 + portfolio_daily_returns).cumprod()
 
-                if spread_std == 0:
-                    total += pair_cap
-                    continue
-
-                z = (spread.iloc[-1] - spread_mean) / spread_std
-
-                pa_today = data.loc[today, sym_a]
-                pb_today = data.loc[today, sym_b]
-                pa_tomorrow = data.loc[tomorrow, sym_a]
-                pb_tomorrow = data.loc[tomorrow, sym_b]
-
-                half = pair_cap / 2
-
-                if z < -z_entry:
-                    # Long A, Short B (spread will widen back up)
-                    shares_a = half / pa_today
-                    shares_b = half / pb_today
-                    pair_cap = float(shares_a * pa_tomorrow - shares_b * pb_tomorrow + half)
-
-                elif z > z_entry:
-                    # Short A, Long B
-                    shares_a = half / pa_today
-                    shares_b = half / pb_today
-                    pair_cap = float(-shares_a * pa_tomorrow + shares_b * pb_tomorrow + half)
-
-                pair_capitals[(sym_a, sym_b)] = max(pair_cap, 0.01)
-                total += pair_capitals[(sym_a, sym_b)]
-
-            capital = total
-            capital_history.loc[tomorrow] = capital
-
-        return capital_history.ffill()
+        return capital_history
