@@ -1,6 +1,12 @@
-from fastapi import APIRouter, HTTPException
+import json
+from fastapi import APIRouter, Depends, HTTPException, Header
+from typing import Optional
+from sqlalchemy.orm import Session
 from app.services.yahoo_finance import fetch_ohlcv, fetch_constituents, fetch_universe_data
 from app.core.strategy_base import calculate_metrics
+from app.db.database import get_db
+from app.models.backtest import BacktestHistory
+from app.models.user import User
 
 # --- Original 3 ---
 from app.strategies.mean_reversion.backtester import MeanReversionBacktester
@@ -79,7 +85,10 @@ def run_backtest(
     universe: str = "DOW",
     start: str = "2023-01-01",
     end: str = "2024-01-01",
-    initial_capital: float = 100000.0
+    initial_capital: float = 100000.0,
+    # Optional: If provided, we look up the user and save the backtest result
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db)
 ):
     if strategy_id not in BACKTESTERS and strategy_id != "benchmark":
         raise HTTPException(
@@ -140,7 +149,7 @@ def run_backtest(
                 "benchmark": b_val
             })
 
-        return {
+        response = {
             "strategy": strategy_id,
             "strategy_name": STRATEGY_META[strategy_id]["name"],
             "strategy_type": STRATEGY_META[strategy_id]["type"],
@@ -149,7 +158,84 @@ def run_backtest(
             "chart_data": results
         }
 
+        # Auto-save to DB if the user sent a valid Authorization: Bearer <token>
+        if authorization and authorization.startswith("Bearer "):
+            try:
+                from jose import jwt
+                from app.core.config import settings
+                token = authorization.split(" ", 1)[1]
+                payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+                email = payload.get("sub")
+                user = db.query(User).filter(User.email == email).first()
+                if user:
+                    history_entry = BacktestHistory(
+                        user_id=user.id,
+                        strategy_id=strategy_id,
+                        universe=universe,
+                        start_date=start,
+                        end_date=end,
+                        initial_capital=initial_capital,
+                        final_capital=float(equity_curve.iloc[-1]),
+                        sharpe_ratio=metrics.get("sharpe_ratio"),
+                        max_drawdown=metrics.get("max_drawdown"),
+                        chart_data=json.dumps(results)
+                    )
+                    db.add(history_entry)
+                    db.commit()
+            except Exception:
+                pass  # Never fail the backtest just because saving failed
+
+        return response
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history")
+def get_history(
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+    limit: int = 20
+):
+    """Return the logged-in user's backtest history, most recent first."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        from jose import jwt
+        from app.core.config import settings
+        token = authorization.split(" ", 1)[1]
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        email = payload.get("sub")
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        runs = (
+            db.query(BacktestHistory)
+            .filter(BacktestHistory.user_id == user.id)
+            .order_by(BacktestHistory.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "strategy_id": r.strategy_id,
+                "strategy_name": STRATEGY_META.get(r.strategy_id, {}).get("name", r.strategy_id),
+                "universe": r.universe,
+                "start_date": r.start_date,
+                "end_date": r.end_date,
+                "initial_capital": r.initial_capital,
+                "final_capital": r.final_capital,
+                "sharpe_ratio": r.sharpe_ratio,
+                "max_drawdown": r.max_drawdown,
+                "created_at": str(r.created_at)
+            }
+            for r in runs
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid token")

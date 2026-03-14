@@ -11,8 +11,11 @@ class MeanReversionBacktester(StrategyBase):
         data = self.prepare_data(data)
         daily_returns = data.pct_change()
         
+        # initialize capital
         capital = self.initial_capital
+        #create capital history series
         capital_history = pd.Series(index=data.index, dtype=float)
+        #set first value of capital history to initial capital
         capital_history.iloc[0] = capital
         
         # 2. Simulation Loop
