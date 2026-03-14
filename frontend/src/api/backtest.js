@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = 'http://localhost:8000';
+const BASE_URL = 'http://localhost:8001';
 
 export const api = {
   listStrategies: () => axios.get(`${BASE_URL}/strategies`).then(r => r.data),
